@@ -7,26 +7,47 @@ function Resolve-Symlinks {
     )
 
     [string] $separator = '/'
-    [string[]] $parts = $Path.Split($separator)
+    [string] $normalizedPath = [System.IO.Path]::GetFullPath($Path)
+    [string[]] $parts = $normalizedPath.Replace('\', $separator).Split($separator)
 
     [string] $realPath = ''
     foreach ($part in $parts) {
+        if ([string]::IsNullOrEmpty($part)) {
+            continue
+        }
+
         if ($realPath -and !$realPath.EndsWith($separator)) {
             $realPath += $separator
         }
 
-        $realPath += $part.Replace('\', '/')
+        $realPath += $part
 
         # The slash is important when using Get-Item on Drive letters in pwsh.
         if (-not($realPath.Contains($separator)) -and $realPath.EndsWith(':')) {
             $realPath += '/'
         }
 
-        $item = Get-Item $realPath
+        try {
+            $item = Get-Item -LiteralPath $realPath -Force -ErrorAction Stop
+        }
+        catch {
+            return $normalizedPath.Replace('\', '/')
+        }
+
         if ($item.LinkTarget) {
-            $realPath = $item.LinkTarget.Replace('\', '/')
+            $linkTarget = $item.LinkTarget
+            if (-not [System.IO.Path]::IsPathRooted($linkTarget)) {
+                $linkTarget = Join-Path $item.DirectoryName $linkTarget
+            }
+
+            $realPath = [System.IO.Path]::GetFullPath($linkTarget).Replace('\', '/')
         }
     }
+
+    if ([string]::IsNullOrWhiteSpace($realPath)) {
+        return $normalizedPath.Replace('\', '/')
+    }
+
     $realPath
 }
 
